@@ -14,6 +14,8 @@ const char* mqttBroker = "test.mosquitto.org";
 const int mqttPort = 1883;
 const char* mqttTopic = "ynov-lyon-2023/esp32/ed/in";
 bool isWifiConnected = false;
+const int connectionConfig = 2;
+const int connectionFreq = 30;
 
 WiFiClient wifiClient;
 HTTPClient httpClient;
@@ -38,10 +40,28 @@ void connectWifi()
   }
 }
 
+void getConfig(int connectionConfig, int connectionFreq)
+{
+  HTTPClient http;
+  http.begin("http://172.20.10.8:8080/api/v1/esp32/config");
+  int httpResponseCode = http.GET();
+
+  if (httpResponseCode == 200)
+  {
+    String response = http.getString();
+
+    DynamicJsonDocument doc(2000);
+    deserializeJson(doc, response);
+    connectionConfig = doc["connectionConfig"];
+    connectionFreq = doc["connectionFreq"];
+  }
+}
+
 void setup()
 {
   Serial.begin(115200);
   connectWifi();
+  getConfig(connectionConfig, connectionFreq);
   mqttClient.setServer(mqttBroker, mqttPort);
 }
 
@@ -77,50 +97,28 @@ void sendTemperatureWithMqtt() {
       mqttClient.publish(mqttTopic, temperatureStr.c_str());
 }
 
+
 void loop()
 {
 
   if(isWifiConnected) {
-
-    httpClient.begin(configEndpoint.c_str());
-
-    int httpResponseCode = httpClient.GET();
-    Serial.println("httpResponseCode :");
-    Serial.println(httpResponseCode);
-  
-    if (httpResponseCode == HTTP_CODE_OK)
-    {
-      String payload = httpClient.getString();
-
-      // Parsing du JSON reçu
-      DynamicJsonDocument doc(200);
-      deserializeJson(doc, payload);
-
-      // Extraction des valeurs de configuration
-      float tempFreq = doc["tempFreq"];
-      int connectionConfig = doc["connectionConfig"];
-      int connectionFreq = doc["connectionFreq"];
-
-      Serial.println(tempFreq);
-
-
       // Envoi de la température en fonction de la configuration
       if (connectionConfig == 1)
       {
         Serial.println("Start sending data by http");
         sendTemperatureWithHttp();
+        // getConfig(connectionConfig, connectionFreq);
       }
       else if (connectionConfig == 2)
       {
         Serial.println("Start sending data on topic");
         sendTemperatureWithMqtt();
+        // getConfig(connectionConfig, connectionFreq);
       }
-      // WiFi.disconnect();
+      WiFi.disconnect();
 
       // Attente pendant l'intervalle de tempFreq en millisecondes
-      delay(tempFreq * 1000);
-    }
-    // httpClient.end();
+      delay(connectionFreq * 1000);
 
   } else {
     connectWifi();
